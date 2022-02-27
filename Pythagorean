@@ -1,0 +1,117 @@
+# Load the packages
+import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load the data
+# EPL results for the 2017/18 season
+EPL18 = pd.read_excel('Assignment Data/Week 1/EPL2017-18.xlsx')
+print(EPL18.columns.tolist())
+
+#This dataframe contains 6 variables: ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR']
+#FTHG stands for goals scored (FTHG) and FTAG for goals against (FTAG), FTR is the result(H- home win, D- draw, A – away win).
+
+#We first identify whether the result was a win for the home team (H),the away team (A) or a draw (D). 
+#We also create the counting variable.
+EPL18['hwinvalue'] = np.where(EPL18['FTR']=='H',1, np.where(EPL18['FTR']=='D',0.5,0))
+EPL18['awinvalue'] = np.where(EPL18['FTR']=='A',1, np.where(EPL18['FTR']=='D',0.5,0))
+EPL18['count'] = 1
+EPL18
+
+# Now we have to create separate dfs, defining the season up 2018 as the first half of the season
+Half2017 = EPL18[EPL18.Date < 20180000]
+Half2017.describe()
+
+# Once again we have to create separate dfs to calculate home team and away team performance.
+# Here is the home team df, including only the variables we need.
+# Also renaming the variables to denote whether they are aggregates for home team or away team.
+HT2017 = Half2017.groupby(['HomeTeam'])['count','hwinvalue', 'FTHG','FTAG'].sum().reset_index()
+HT2017 = HT2017.rename(columns={'HomeTeam':'team','count':'Ph','FTHG':'FTHGh','FTAG':'FTAGh'})
+HT2017
+
+# Now we create the mirror image df for the away team results.
+AT2017 = Half2017.groupby(['AwayTeam'])['count','awinvalue', 'FTHG','FTAG'].sum().reset_index()
+AT2017 = AT2017.rename(columns={'AwayTeam':'team','count':'Pa','FTHG':'FTHGa','FTAG':'FTAGa'})
+AT2017
+
+# Merge the home team and away team results
+EPL17 = pd.merge(HT2017, AT2017, on = ['team'])
+EPL17
+
+# Sum the results by home and away measures to get the team overall performance for the season
+EPL17['W'] = EPL17['hwinvalue']+EPL17['awinvalue']
+EPL17['G'] = EPL17['Ph']+EPL17['Pa']
+EPL17['GF'] = EPL17['FTHGh']+EPL17['FTAGa']
+EPL17['GA'] = EPL17['FTAGh']+EPL17['FTHGa']
+EPL17
+
+# Create the win percentage and Pythagorean Expectation
+EPL17['wpc17'] = EPL17['W']/EPL17['G']
+EPL17['pyth17'] = EPL17['GF']**2/(EPL17['GF']**2 + EPL17['GA']**2)
+EPL17['A'] = EPL17['wpc17'] - EPL17['pyth17']
+EPL17
+
+# Plot the data
+# Seaborn allow us to color code teams based on team
+sns.relplot(x="pyth17", y="wpc17", data=EPL17,hue='team')
+
+# Mirroring the same process for the second half of the season
+Half2018 = EPL18[EPL18.Date > 20180000]
+Half2018
+
+HT2018 = Half2018.groupby(['HomeTeam'])['count','hwinvalue','FTHG','FTAG'].sum().reset_index()
+HT2018 = HT2018.rename(columns={'HomeTeam':'team','count':'Ph','FTHG':'FTHGh','FTAG':'FTAGh'})
+
+AT2018 = Half2018.groupby(['AwayTeam'])['count','awinvalue','FTHG','FTAG'].sum().reset_index()
+AT2018 = AT2018.rename(columns={'AwayTeam':'team','count':'Pa','FTHG':'FTHGa','FTAG':'FTAGa'})
+AT2018
+
+NEW_EPL18 = pd.merge(HT2018, AT2018, on = ['team'])
+NEW_EPL18
+
+NEW_EPL18['W'] = NEW_EPL18['hwinvalue'] + NEW_EPL18['awinvalue']
+NEW_EPL18['G'] = NEW_EPL18['Ph'] + NEW_EPL18['Pa']
+NEW_EPL18['GF'] = NEW_EPL18['FTHGh'] + NEW_EPL18['FTAGa']
+NEW_EPL18['GA'] = NEW_EPL18['FTAGh'] + NEW_EPL18['FTHGa']
+NEW_EPL18
+
+NEW_EPL18['wpc18'] = NEW_EPL18['W']/NEW_EPL18['G']
+NEW_EPL18['pyth18'] = NEW_EPL18['GF']**2/(NEW_EPL18['GF']**2 + NEW_EPL18['GA']**2)
+NEW_EPL18
+HT2018
+
+sns.relplot(x="pyth18", y="wpc18", data=NEW_EPL18,hue='team')
+
+# Run the regression
+pyth_lm = smf.ols(formula = 'wpc17 ~ pyth17', data=EPL17).fit()
+pyth_lm.summary()
+
+pyth_lm = smf.ols(formula = 'wpc18 ~ pyth18', data=NEW_EPL18).fit()
+pyth_lm.summary()
+
+# Mearging 2017 and 2018 dataframes
+EPL2018 = pd.merge(EPL17, NEW_EPL18, on = ['team'])
+EPL2018
+
+# Now, we plot Pythagorean Expectation (2017) against win percentage in the second half of the season
+sns.relplot(x="pyth17", y="wpc18", data=EPL2018,hue='team')
+
+# Then, compare this with a plot of win percentage from the first half of the season against win percentage
+#in the second half of the season
+sns.relplot(x="wpc17", y="wpc18", data=EPL2018,hue='team')
+
+# The two plots look similar
+# We can be more precise still if we compare the correlation coefficients. The first row of the table shows the 
+# correlation of win percentage in second half of the season against itself, win percentage in the first half of the season,
+# Pythagorean Expectation in the first half of the season, and Pythagorean Expectation in the second half of the season.
+# Our focus is on comparing the second and third columns.
+
+keyvars = EPL2018[['team','wpc18','wpc17','pyth17','pyth18']]
+keyvars.corr()
+
+# We can also sort the variables to show for each club how close the relationships are between the first and second half
+# of the season
+keyvars = keyvars.sort_values(by=['wpc18'],ascending=False)
+keyvars
